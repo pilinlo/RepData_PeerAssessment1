@@ -1,25 +1,110 @@
 ---
 title: "Reproducible Research: Peer Assessment 1"
-output: 
-  html_document:
-    keep_md: true
+author: "Austin Lo"
+date: "April 4, 2016"
+output: html_document
 ---
+```{r, include=FALSE}
+require(lattice)
+require(ggplot2)
+require(dplyr)
+require(stringi)
+require(stats)
+require(gridExtra)
+```
 
+##Loading and preprocessing the data
+```{r}
 
-## Loading and preprocessing the data
+url = "https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip"
+if(!file.exists("repdata-data-activity.zip")) {
+  download.file(url,"repdata-data-activity.zip")
+  unzip("repdata-data-activity.zip")
+}
+ACT <- read.csv("activity.csv")
+```
+Calculate the Daily Sum
+##What is mean total number of steps taken per day?
+```{r }
+ACT_Date_Sum<-ACT %>% group_by(date) %>% summarize(Total=sum(steps))
+```
+Calculate the Mean and Median of All Daily Sum 
+```{r}
+ACT_Date_Line=cbind(as.data.frame(rbind(mean(ACT_Date_Sum$Total,na.rm = T),median(ACT_Date_Sum$Total,na.rm = T))),Summary=c("Mean","Median"))
+```
+####<span style="color:blue">Answer : Mean Total Number of Steps Taken Per Day =  `r as.integer(mean(ACT_Date_Sum$Total,na.rm = T)) `</span>
 
+```{r, echo=FALSE}
+plot1<-ggplot(ACT_Date_Sum,aes(Total))+
+       geom_histogram(bins=22,fill='#deebf7', color='#bdbdbd')+
+       scale_y_continuous(breaks=seq(0, 10, 1))+
+       labs(title="Histogram of Total Steps Taken Each Day",x="Total Steps")+
+       geom_vline(data=ACT_Date_Line,mapping=aes(xintercept=V1,color=Summary))+
+       geom_text(x=14000,y=9.5,label=paste("Mean=",round(ACT_Date_Line$V1[1],digits=0)))+
+       geom_text(x=14000,y=9.0,label=paste("Median=",round(ACT_Date_Line$V1[2],digits=0)))
+print(plot1)
+```
 
+##What is the average daily activity pattern?
+Calculate the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis) 
+```{r}
+ACT_Interval_Sum<-ACT %>% group_by(interval=as.factor(interval)) %>% summarize(Total=sum(steps,na.rm=T)/length(date))
+ACT_Interval_Max<-ACT_Interval_Sum[which.max(ACT_Interval_Sum$Total),]
+```
 
-## What is mean total number of steps taken per day?
+```{r echo=FALSE}
+plot2<-ggplot(ACT_Interval_Sum,aes(x=interval,y=Total,group=1))+
+       geom_line(color="steelblue")+
+       labs(title="Average Steps of All Intervals",x="Intervals",y="Total Steps")+
+       geom_text(x=10,y=ACT_Interval_Max$Total,hjust=0,
+                 label=paste("Maximum Average Steps is",round(ACT_Interval_Max$Total,digits=2),"\nat ",
+                 stri_sub(ACT_Interval_Max$interval,1,stri_length(ACT_Interval_Max$interval)-2),":",
+                 stri_sub(ACT_Interval_Max$interval,-2,-1)))+
+       theme(axis.text.x = element_text(angle = 90, hjust = 1))
+print(plot2)
+```
 
+##Imputing missing values
+Imputed by Replacing the NA with Group Mean
+```{r}
+ACT_Imputed<-transform(ACT, steps = ifelse(is.na(steps), 
+                       ave(steps, date, FUN = function(x) sum(x, na.rm = TRUE)/288), steps))
+```
+Calculate the Daily Sum of Imputed Data  
+```{r}
+ACT_Imputed_Date_Sum<-ACT_Imputed %>% group_by(date) %>% summarize(Total=sum(steps))
+ACT_Imputed_Date_Line=cbind(as.data.frame(rbind(mean(ACT_Imputed_Date_Sum$Total,na.rm = T),
+                                                median(ACT_Imputed_Date_Sum$Total,na.rm = T))),
+                                                Summary=c("Mean","Median"))
+```
+####<span style="color:blue">Answer : Mean Total Number of Steps Taken Per Day(Imputed Data) =  `r as.integer(mean(ACT_Imputed_Date_Sum$Total,na.rm = T)) `</span>
 
+```{r echo=FALSE}
+plot3<-ggplot(ACT_Imputed_Date_Sum,aes(Total))+
+  geom_histogram(bins=22,fill='#deebf7', color='#bdbdbd')+
+  scale_y_continuous(breaks=seq(0, 10, 1))+
+  labs(title="Histogram of Total Steps Taken Each Day(Imputed Dataset)",x="Total Steps")+
+  geom_vline(data=ACT_Imputed_Date_Line,mapping=aes(xintercept=V1,color=Summary))+
+  geom_text(x=14000,y=9.5,label=paste("Mean=",round(ACT_Imputed_Date_Line$V1[1],digits=0)))+
+  geom_text(x=14000,y=9.0,label=paste("Median=",round(ACT_Imputed_Date_Line$V1[2],digits=0)))
+print(plot3)
+```
 
-## What is the average daily activity pattern?
-
-
-
-## Imputing missing values
-
-
-
-## Are there differences in activity patterns between weekdays and weekends?
+##Are there differences in activity patterns between weekdays and weekends?
+Add Weekdays Column by Mutating from the date Column
+```{r}
+ACT_Weekday<-ACT_Imputed %>% mutate(weekdays = ifelse(weekdays(as.Date(date))=="Saturday"|weekdays(as.Date(date))=="Sunday","weekend","weekday"))
+```
+Group by Weekdays/Weekend and Calculate the Mean
+```{r}
+ACT_Weekday_group<-ACT_Weekday %>% group_by(interval,weekdays=as.factor(ACT_Weekday$weekdays))
+ACT_Weekday_Sum<-as.data.frame(summarize(ACT_Weekday_group,Total=sum(steps)/length(date)))
+```
+####<span style="color:blue">Answer : The Average Steps between 5~9am and 18~19pm is higher in Weekdays, but the Average Steps between 9am~18pm is higher in Weekend</span>
+```{r echo=FALSE}
+plot4<-ggplot(ACT_Weekday_Sum,aes(interval, Total))+
+              geom_line(aes(col=weekdays))+
+              facet_grid(weekdays~.)+
+              labs(title="Average Steps of All Intervals",x="Intervals",y="Total Steps")
+print(plot4)  
+```
